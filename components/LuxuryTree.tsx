@@ -1,13 +1,14 @@
 
 import { useMemo, useRef, useState, useEffect, Suspense } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Instance, Instances, useTexture, Sparkles } from '@react-three/drei';
+import { Instance, Instances, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { GOLD_COLOR, LOVE_RED, ROSE_GOLD, BLUSH_PINK, DIAMOND_WHITE, FRAME_DATA } from '../constants';
 import { TransformState } from '../types';
 
 interface LuxuryTreeProps {
     transformRef: any;
+    photoData?: typeof FRAME_DATA;
 }
 
 const TREE_SLOPE = 0.45;
@@ -276,7 +277,45 @@ const BlossomParticleSystem = ({ count, type, transformRef }: { count: number, t
 
 const UnifiedPhotoFrame = ({ config, index, transformRef }: { config: any, index: number, transformRef: any, key?: any }) => {
     const meshRef = useRef<THREE.Group>(null);
-    const texture = useTexture(config.url) as THREE.Texture;
+    const [texture, setTexture] = useState<THREE.Texture | null>(null);
+    // Initialize with a default portrait-ish size
+    const [dims, setDims] = useState({ w: 0.5, h: 0.7 });
+
+    useEffect(() => {
+        let isMounted = true;
+        const loader = new THREE.TextureLoader();
+        loader.load(
+            config.url,
+            (loadedTexture) => {
+                if (!isMounted) return;
+                loadedTexture.colorSpace = THREE.SRGBColorSpace;
+                
+                // Calculate correct aspect ratio
+                const img = loadedTexture.image;
+                if (img && img.width && img.height) {
+                    const aspect = img.width / img.height;
+                    const MAX_DIM = 0.75; // Constrain maximum dimension to keep tree balanced
+                    let w, h;
+                    
+                    if (aspect > 1) {
+                        // Landscape
+                        w = MAX_DIM;
+                        h = MAX_DIM / aspect;
+                    } else {
+                        // Portrait or Square
+                        h = MAX_DIM;
+                        w = MAX_DIM * aspect;
+                    }
+                    setDims({ w, h });
+                }
+
+                setTexture(loadedTexture);
+            },
+            undefined,
+            (err) => console.warn(`Failed to load texture ${config.url}`, err)
+        );
+        return () => { isMounted = false; };
+    }, [config.url]);
     
     const foliageR = (3.6 - (config.y + 2.0)) * 0.45;
     const r = foliageR + 0.08;
@@ -327,16 +366,26 @@ const UnifiedPhotoFrame = ({ config, index, transformRef }: { config: any, index
 
     return (
         <group ref={meshRef}>
-            <mesh><boxGeometry args={[0.55, 0.75, 0.06]} /><meshStandardMaterial color={ROSE_GOLD} metalness={1} roughness={0.1} /></mesh>
-            <mesh position={[0,0,0.04]}><planeGeometry args={[0.5, 0.7]} /><meshBasicMaterial map={texture} /></mesh>
+            <mesh>
+                <boxGeometry args={[dims.w + 0.05, dims.h + 0.05, 0.06]} />
+                <meshStandardMaterial color={ROSE_GOLD} metalness={1} roughness={0.1} />
+            </mesh>
+            <mesh position={[0,0,0.04]}>
+                <planeGeometry args={[dims.w, dims.h]} />
+                {texture ? (
+                    <meshBasicMaterial map={texture} />
+                ) : (
+                    <meshStandardMaterial color={ROSE_GOLD} transparent opacity={0.3} />
+                )}
+            </mesh>
         </group>
     );
 }
 
-const PhotoInstances = ({ transformRef }: { transformRef: any }) => {
+const PhotoInstances = ({ transformRef, photoData }: { transformRef: any, photoData: typeof FRAME_DATA }) => {
     return (
         <group>
-            {FRAME_DATA.map((f, i) => <UnifiedPhotoFrame key={i} config={f} index={i} transformRef={transformRef} />)}
+            {photoData.map((f, i) => <UnifiedPhotoFrame key={f.url} config={f} index={i} transformRef={transformRef} />)}
         </group>
     );
 };
@@ -400,7 +449,7 @@ const LoveSpiral = ({ direction = 1, offset = 0 }) => {
     return <points ref={pointsRef}><bufferGeometry><bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} /></bufferGeometry><pointsMaterial color={ROSE_GOLD} size={0.025} sizeAttenuation transparent opacity={0.5} blending={THREE.AdditiveBlending} /></points>;
 };
 
-export const EternalLoveTree = ({ transformRef }: LuxuryTreeProps) => {
+export const EternalLoveTree = ({ transformRef, photoData = FRAME_DATA }: LuxuryTreeProps) => {
   return (
     <Suspense fallback={null}>
         <group>
@@ -408,7 +457,7 @@ export const EternalLoveTree = ({ transformRef }: LuxuryTreeProps) => {
             <BlossomParticleSystem count={8000} type="stem" transformRef={transformRef} />
             <OrnamentSystem transformRef={transformRef} />
             <SpecialOrnamentSystem transformRef={transformRef} />
-            <PhotoInstances transformRef={transformRef} />
+            <PhotoInstances transformRef={transformRef} photoData={photoData} />
             <LoveSpiral direction={1} offset={0} />
             <LoveSpiral direction={-1} offset={Math.PI} />
             <Sparkles count={500} scale={7} size={2.5} speed={0.5} opacity={0.4} color="#ffb7c5" />
