@@ -1,5 +1,5 @@
-
-import { useRef } from 'react';
+/// <reference types="@react-three/fiber" />
+import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ContactShadows, Float, PerspectiveCamera, Environment, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
@@ -18,12 +18,13 @@ export const Scene = ({ transformRef, photos }: SceneProps) => {
   
   useFrame(() => {
     if (groupRef.current && transformRef.current) {
-        const { rotationY, position, scale, treeState } = transformRef.current;
+        const { position, scale, treeState } = transformRef.current;
         const isGallery = treeState === 'GALLERY';
         const lerpFactor = isGallery ? 0.12 : 0.08;
-        const targetRotY = isGallery ? 0 : rotationY;
         
-        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetRotY, lerpFactor);
+        // Rotation is now handled inside LuxuryTree to allow splitting 
+        // tree rotation and photo rotation independently.
+        
         groupRef.current.position.x = THREE.MathUtils.lerp(groupRef.current.position.x, position[0], lerpFactor);
         groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, position[1], lerpFactor);
         

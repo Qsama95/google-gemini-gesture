@@ -78,6 +78,10 @@ export const GestureController = ({ transformRef }: GestureControllerProps) => {
     const t = transformRef.current;
 
     // Apply persistent auto-rotation every frame
+    // In Gallery mode, we typically stop auto-rotation, but if we want manual control, we can leave it.
+    // However, usually Gallery is static unless moved. Let's keep auto-rotation only for non-Gallery for now,
+    // or allow it if the user manually spins it. The prompt asked to "track hand rotation".
+    // I'll leave the auto-rotation dampening logic as is, but allow manual impulse.
     if (t && t.treeState !== 'GALLERY') {
         t.rotationY += t.autoRotationSpeed;
     }
@@ -119,15 +123,22 @@ export const GestureController = ({ transformRef }: GestureControllerProps) => {
     const t = transformRef.current;
     
     // --- 1. ROTATION IMPULSE (Check Right Hand only) ---
-    if (data && data.angle !== undefined && t.treeState !== 'GALLERY') {
+    // ENABLED FOR ALL STATES NOW
+    if (data && data.angle !== undefined) {
         if (prevData.current && prevData.current.angle !== undefined) {
             let deltaAngle = data.angle - prevData.current.angle;
             if (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
             if (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
 
             if (Math.abs(deltaAngle) > 0.05) { // Increased threshold to avoid noise
-                const speedImpulse = -deltaAngle * 0.12; // Even slower for better luxury feel
-                t.autoRotationSpeed = Math.max(-0.007, Math.min(0.007, speedImpulse));
+                const speedImpulse = -deltaAngle * 0.12; 
+                // Directly modify rotationY for immediate response in Gallery mode 
+                // since auto-rotation might be disabled in loop above
+                if (t.treeState === 'GALLERY') {
+                    t.rotationY += speedImpulse;
+                } else {
+                    t.autoRotationSpeed = Math.max(-0.007, Math.min(0.007, speedImpulse));
+                }
             }
         }
     }
@@ -140,8 +151,6 @@ export const GestureController = ({ transformRef }: GestureControllerProps) => {
              const newScale = t.scale + zoomDelta;
              
              // Dynamic Scale Limits:
-             // In Gallery, prevent clipping past the camera (Z=9)
-             // Photos are at Local Z ~ 6.0. 6.0 * 1.4 = 8.4 (Still < 9.0)
              const maxScale = t.treeState === 'GALLERY' ? 1.4 : 2.0;
              const minScale = t.treeState === 'GALLERY' ? 0.7 : 0.6;
              
@@ -161,7 +170,6 @@ export const GestureController = ({ transformRef }: GestureControllerProps) => {
              t.position = [0, 0, 0];
              t.focusedPhotoIndex = 0;
              t.galleryOffset = 0;
-             // Snap scale to a safe default for gallery transition
              if (t.scale > 1.4) t.scale = 1.0;
         }
         t.chaosFactor = Math.min(1, t.chaosFactor + 0.05);

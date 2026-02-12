@@ -1,5 +1,6 @@
 
-import { useMemo, useRef, useState, useEffect, Suspense } from 'react';
+/// <reference types="@react-three/fiber" />
+import React, { useMemo, useRef, useState, useEffect, Suspense } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Instance, Instances, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,11 +9,8 @@ import { TransformState } from '../types';
 
 interface LuxuryTreeProps {
     transformRef: any;
-    photoData?: typeof FRAME_DATA;
+    photoData?: any[];
 }
-
-const TREE_SLOPE = 0.45;
-const SLANT_ANGLE = Math.atan(TREE_SLOPE);
 
 // --- Shaders (Petals & Hearts) ---
 const petalVertexShader = `
@@ -51,38 +49,6 @@ const petalFragmentShader = `
     if (r > 1.0) discard;
     float alpha = 1.0 - smoothstep(0.5, 1.0, r);
     gl_FragColor = vec4(vColor, alpha * 0.8);
-  }
-`;
-
-const sparkVertexShader = `
-  uniform float uTime;
-  uniform float uChaosFactor;
-  attribute vec3 spiralPosition;
-  attribute vec3 chaosPosition;
-  attribute float sizeRandom;
-  attribute float speedRandom;
-  varying float vAlpha;
-  void main() {
-    float t = uChaosFactor;
-    vec3 sPos = spiralPosition;
-    float angle = uTime * speedRandom * 0.3 + sPos.y;
-    float r = length(sPos.xz);
-    sPos.x = r * cos(angle + atan(sPos.z, sPos.x));
-    sPos.z = r * sin(angle + atan(sPos.z, sPos.x));
-    vec3 pos = mix(sPos, chaosPosition, t);
-    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = (4.0 * sizeRandom + 1.0) * (1.0 / -mvPosition.z);
-    vAlpha = 0.4 + 0.6 * sin(uTime * 3.0 * speedRandom);
-  }
-`;
-
-const sparkFragmentShader = `
-  varying float vAlpha;
-  void main() {
-    vec2 coord = gl_PointCoord - vec2(0.5);
-    if (length(coord) > 0.5) discard;
-    gl_FragColor = vec4(1.0, 0.7, 0.8, vAlpha);
   }
 `;
 
@@ -132,7 +98,11 @@ const CupidArrowModel = () => (
 const LoveLetterModel = () => (
     <group scale={0.4}>
         <mesh><boxGeometry args={[0.4, 0.3, 0.02]} /><meshStandardMaterial color="#fdf5e6" roughness={1} /></mesh>
-        <mesh position={[0, 0, 0.015]}><cylinderGeometry args={[0.04, 0.04, 0.01, 16]} rotation={[Math.PI/2, 0, 0]} /><meshStandardMaterial color={LOVE_RED} metalness={0.5} roughness={0.2} /></mesh>
+        {/* Fix: Moved rotation from cylinderGeometry to parent mesh */}
+        <mesh position={[0, 0, 0.015]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.04, 0.04, 0.01, 16]} />
+            <meshStandardMaterial color={LOVE_RED} metalness={0.5} roughness={0.2} />
+        </mesh>
     </group>
 );
 
@@ -188,7 +158,7 @@ const OrnamentSystem = ({ transformRef }: { transformRef: any }) => {
         };
         const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         geo.scale(0.08, 0.08, 0.08);
-        geo.rotateX(Math.PI); // Orient correctly
+        geo.rotateX(Math.PI); 
         return geo;
     }, []);
 
@@ -275,10 +245,9 @@ const BlossomParticleSystem = ({ count, type, transformRef }: { count: number, t
   );
 };
 
-const UnifiedPhotoFrame = ({ config, index, transformRef }: { config: any, index: number, transformRef: any, key?: any }) => {
+const UnifiedPhotoFrame = ({ config, index, transformRef, totalCount }: { config: any, index: number, transformRef: any, totalCount: number, key?: any }) => {
     const meshRef = useRef<THREE.Group>(null);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
-    // Initialize with a default portrait-ish size
     const [dims, setDims] = useState({ w: 0.5, h: 0.7 });
 
     useEffect(() => {
@@ -290,19 +259,16 @@ const UnifiedPhotoFrame = ({ config, index, transformRef }: { config: any, index
                 if (!isMounted) return;
                 loadedTexture.colorSpace = THREE.SRGBColorSpace;
                 
-                // Calculate correct aspect ratio
                 const img = loadedTexture.image;
                 if (img && img.width && img.height) {
                     const aspect = img.width / img.height;
-                    const MAX_DIM = 0.75; // Constrain maximum dimension to keep tree balanced
+                    const MAX_DIM = 0.75; 
                     let w, h;
                     
                     if (aspect > 1) {
-                        // Landscape
                         w = MAX_DIM;
                         h = MAX_DIM / aspect;
                     } else {
-                        // Portrait or Square
                         h = MAX_DIM;
                         w = MAX_DIM * aspect;
                     }
@@ -317,14 +283,14 @@ const UnifiedPhotoFrame = ({ config, index, transformRef }: { config: any, index
         return () => { isMounted = false; };
     }, [config.url]);
     
+    // Smooth layout calculation
     const foliageR = (3.6 - (config.y + 2.0)) * 0.45;
-    const r = foliageR + 0.08;
+    const r = foliageR + 0.15; 
     const formedPos = useMemo(() => new THREE.Vector3(r * Math.sin(config.angle), config.y, r * Math.cos(config.angle)), [config, r]);
     const chaosPos = useMemo(() => new THREE.Vector3((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10), []);
 
     const treeRotation = useMemo(() => {
-        const euler = new THREE.Euler(-SLANT_ANGLE, config.angle, 0);
-        return euler;
+        return new THREE.Euler(0, config.angle, 0);
     }, [config.angle]);
 
     useFrame(() => {
@@ -382,10 +348,18 @@ const UnifiedPhotoFrame = ({ config, index, transformRef }: { config: any, index
     );
 }
 
-const PhotoInstances = ({ transformRef, photoData }: { transformRef: any, photoData: typeof FRAME_DATA }) => {
+const PhotoInstances = ({ transformRef, photoData }: { transformRef: any, photoData: any[] }) => {
     return (
         <group>
-            {photoData.map((f, i) => <UnifiedPhotoFrame key={f.url} config={f} index={i} transformRef={transformRef} />)}
+            {photoData.map((f, i) => (
+                <UnifiedPhotoFrame 
+                    key={f.url + i} 
+                    config={f} 
+                    index={i} 
+                    transformRef={transformRef} 
+                    totalCount={photoData.length}
+                />
+            ))}
         </group>
     );
 };
@@ -410,7 +384,7 @@ const EternalHeartTopper = () => {
             bevelThickness: 0.3,
         };
         const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        geo.rotateX(Math.PI); // Flip to point up
+        geo.rotateX(Math.PI); 
         return geo;
     }, []);
 
@@ -449,19 +423,40 @@ const LoveSpiral = ({ direction = 1, offset = 0 }) => {
     return <points ref={pointsRef}><bufferGeometry><bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} /></bufferGeometry><pointsMaterial color={ROSE_GOLD} size={0.025} sizeAttenuation transparent opacity={0.5} blending={THREE.AdditiveBlending} /></points>;
 };
 
-export const EternalLoveTree = ({ transformRef, photoData = FRAME_DATA }: LuxuryTreeProps) => {
+export const EternalLoveTree = ({ transformRef, photoData = [] }: LuxuryTreeProps) => {
+  const treeContentRef = useRef<THREE.Group>(null);
+  const photoContentRef = useRef<THREE.Group>(null);
+
+  useFrame(() => {
+    if(transformRef.current && treeContentRef.current && photoContentRef.current) {
+        const { rotationY, treeState } = transformRef.current;
+        const isGallery = treeState === 'GALLERY';
+        const lerpFactor = isGallery ? 0.12 : 0.08;
+
+        treeContentRef.current.rotation.y = THREE.MathUtils.lerp(treeContentRef.current.rotation.y, rotationY, lerpFactor);
+        
+        const targetPhotoRotY = isGallery ? 0 : rotationY;
+        photoContentRef.current.rotation.y = THREE.MathUtils.lerp(photoContentRef.current.rotation.y, targetPhotoRotY, lerpFactor);
+    }
+  });
+
   return (
     <Suspense fallback={null}>
         <group>
-            <BlossomParticleSystem count={50000} type="petal" transformRef={transformRef} />
-            <BlossomParticleSystem count={8000} type="stem" transformRef={transformRef} />
-            <OrnamentSystem transformRef={transformRef} />
-            <SpecialOrnamentSystem transformRef={transformRef} />
-            <PhotoInstances transformRef={transformRef} photoData={photoData} />
-            <LoveSpiral direction={1} offset={0} />
-            <LoveSpiral direction={-1} offset={Math.PI} />
-            <Sparkles count={500} scale={7} size={2.5} speed={0.5} opacity={0.4} color="#ffb7c5" />
-            <EternalHeartTopper />
+            <group ref={treeContentRef}>
+                <BlossomParticleSystem count={50000} type="petal" transformRef={transformRef} />
+                <BlossomParticleSystem count={8000} type="stem" transformRef={transformRef} />
+                <OrnamentSystem transformRef={transformRef} />
+                <SpecialOrnamentSystem transformRef={transformRef} />
+                <LoveSpiral direction={1} offset={0} />
+                <LoveSpiral direction={-1} offset={Math.PI} />
+                <Sparkles count={500} scale={7} size={2.5} speed={0.5} opacity={0.4} color="#ffb7c5" />
+                <EternalHeartTopper />
+            </group>
+            
+            <group ref={photoContentRef}>
+                <PhotoInstances transformRef={transformRef} photoData={photoData} />
+            </group>
         </group>
     </Suspense>
   );
