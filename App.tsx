@@ -4,52 +4,57 @@ import { Canvas } from '@react-three/fiber';
 import { Scene } from './components/Scene';
 import { GestureController } from './components/GestureController';
 import { TransformState } from './types';
-import { FRAME_DATA } from './constants';
 
-// --- Asset Discovery Service ---
-const discoverAssets = async (path: string, extensions: string[]): Promise<string[]> => {
+// --- Precise Asset Discovery Service ---
+// Probes specifically for 01.jpg through nn.jpg and validates that they are actual images.
+const probePhotos = async (maxCount = 99): Promise<string[]> => {
     const discovered: string[] = [];
+    const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
     
-    // Strategy 1: Attempt to parse directory listing (works on most local dev servers)
-    try {
-        const response = await fetch(path);
-        const text = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(text, 'text/html');
-        const links = Array.from(doc.querySelectorAll('a'));
+    // Batch processing for efficiency
+    const batchSize = 4;
+    for (let i = 1; i <= maxCount; i += batchSize) {
+        const batchPromises = [];
+        for (let j = 0; j < batchSize && (i + j) <= maxCount; j++) {
+            const num = i + j;
+            const paddedNum = num.toString().padStart(2, '0');
+            
+            const validateImage = async () => {
+                for (const ext of extensions) {
+                    const url = `/photos/${paddedNum}${ext}`;
+                    try {
+                        const res = await fetch(url, { method: 'HEAD' });
+                        const contentType = res.headers.get('content-type');
+                        
+                        // CRITICAL: Ensure the server actually returned an image, not a fallback HTML page
+                        if (res.ok && contentType && contentType.startsWith('image/')) {
+                            return url;
+                        }
+                    } catch (e) {
+                        // Silently skip if network error
+                    }
+                }
+                return null;
+            };
+            batchPromises.push(validateImage());
+        }
         
-        links.forEach(link => {
-            const href = link.getAttribute('href');
-            if (href && extensions.some(ext => href.toLowerCase().endsWith(ext))) {
-                // Ensure we have a clean path
-                const fileName = href.split('/').pop() || href;
-                discovered.push(`${path}${fileName}`);
-            }
-        });
-    } catch (e) {
-        console.warn(`Directory listing not supported for ${path}, falling back to probing...`);
-    }
-
-    // Strategy 2: Numeric Probing (Fallback)
-    // If we found nothing via listing, try 1.ext, 2.ext ...
-    if (discovered.length === 0) {
-        for (let i = 1; i <= 20; i++) {
-            for (const ext of extensions) {
-                const testPath = `${path}${i}${ext}`;
-                try {
-                    const res = await fetch(testPath, { method: 'HEAD' });
-                    if (res.ok) discovered.push(testPath);
-                    else break; // Break if we hit a 404 for this extension
-                } catch (e) { break; }
-            }
+        const results = await Promise.all(batchPromises);
+        const validResults = results.filter((r): r is string => r !== null);
+        
+        // If we found nothing in this batch, we assume the sequence has ended.
+        if (validResults.length === 0) {
+            // Note: We only break if we haven't found anything in a whole batch to account for minor gaps
+            if (i > batchSize) break; 
+        } else {
+            discovered.push(...validResults);
         }
     }
-
-    return Array.from(new Set(discovered)); // De-duplicate
+    return discovered;
 };
 
 // --- Music Player ---
-const MusicPlayer = ({ onMusicFound }: { onMusicFound?: (src: string) => void }) => {
+const MusicPlayer = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -59,21 +64,16 @@ const MusicPlayer = ({ onMusicFound }: { onMusicFound?: (src: string) => void })
         audio.volume = 0.4; 
         audioRef.current = audio;
 
-        const initMusic = async () => {
-            const tracks = await discoverAssets('/music/', ['.mp3', '.wav', '.m4a']);
-            const defaultTrack = tracks.length > 0 ? tracks[0] : '/music/bgm.mp3';
-            
-            audio.src = defaultTrack;
-            if (onMusicFound) onMusicFound(defaultTrack);
-        };
-
-        initMusic();
+        // Directly target the specified filename
+        audio.src = '/music/bgm.mp3';
 
         const handleInteraction = () => {
             if (audio.paused && audio.src) {
                 audio.play()
                     .then(() => setIsPlaying(true))
-                    .catch(() => {});
+                    .catch(() => {
+                        console.log("Waiting for user interaction or file exists check failed.");
+                    });
             }
             window.removeEventListener('click', handleInteraction);
         };
@@ -112,7 +112,7 @@ const MusicPlayer = ({ onMusicFound }: { onMusicFound?: (src: string) => void })
             
             <label className="cursor-pointer flex items-center gap-2 group">
                 <span className="text-[10px] text-white/30 group-hover:text-rose-300 transition-colors uppercase tracking-widest">
-                    Change Track
+                    Custom Track
                 </span>
                 <div className="w-1.5 h-1.5 rounded-full bg-white/20 group-hover:bg-rose-500 transition-colors" />
                 <input 
@@ -165,7 +165,7 @@ const Overlay = ({ isScanning, photoCount }: { isScanning: boolean, photoCount: 
             {isScanning && (
                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
                      <p className="font-display text-rose-300/60 text-xs md:text-sm tracking-[0.4em] uppercase animate-pulse">
-                         Scanning Local Memories...
+                         Blossoming Memories...
                      </p>
                  </div>
             )}
@@ -173,7 +173,7 @@ const Overlay = ({ isScanning, photoCount }: { isScanning: boolean, photoCount: 
             {/* Footer Instructions */}
             <div className="flex flex-col items-center gap-2 mb-8 bg-black/10 backdrop-blur-sm p-4 rounded-3xl">
                  <p className="font-deco text-[10px] text-rose-500/70 tracking-[0.2em] uppercase">
-                    Interactive Sensory Experience • {photoCount} Memories Found
+                    {photoCount > 0 ? `${photoCount} Memories Discovered` : 'Blossom Tree Formed • Add Memories'}
                  </p>
                  <div className="flex flex-wrap justify-center gap-4 text-[9px] text-white/50 font-display tracking-widest px-4 text-center">
                      <span>OPEN PALM: BLOSSOM GALLERY</span>
@@ -193,22 +193,22 @@ export default function App() {
   useEffect(() => {
       const loadDefaults = async () => {
           setIsScanning(true);
-          const photoFiles = await discoverAssets('/photos/', ['.jpg', '.jpeg', '.png', '.webp']);
+          // Only loads what it actually finds in /photos/01.jpg...nn.jpg
+          const photoFiles = await probePhotos(99);
           
           if (photoFiles.length > 0) {
               const mappedPhotos = photoFiles.map((url, i) => {
-                  // Distribute evenly on tree
-                  const t = i / (photoFiles.length || 1);
+                  const t = i / photoFiles.length;
                   return {
                       url,
-                      y: (t * 1.6) - 0.8, // -0.8 to 0.8
-                      angle: t * Math.PI * 8 // Multiple spirals
+                      y: (t * 2.2) - 1.1, 
+                      angle: t * Math.PI * 8 
                   };
               });
               setPhotos(mappedPhotos);
           } else {
-              // Final fallback if absolutely nothing found
-              setPhotos(FRAME_DATA);
+              // No local files found - starts purely as a blossom tree
+              setPhotos([]);
           }
           setIsScanning(false);
       };
@@ -220,11 +220,10 @@ export default function App() {
         const files = Array.from(e.target.files);
         const newPhotos = files.map((file, i) => {
             const index = photos.length + i;
-            const t = index / 12; // Base layout on 12-slot rotation
             return {
                 url: URL.createObjectURL(file as Blob),
-                y: (Math.random() * 1.6) - 0.8,
-                angle: t * Math.PI * 2
+                y: (Math.random() * 2.2) - 1.1,
+                angle: Math.random() * Math.PI * 2
             };
         });
         setPhotos([...photos, ...newPhotos]);
@@ -253,9 +252,9 @@ export default function App() {
 
       <Canvas 
         shadows 
-        dpr={[1, 1.5]} 
+        dpr={[1, 2]} 
         gl={{ 
-            antialias: false, 
+            antialias: true, 
             toneMappingExposure: 1.1,
             powerPreference: "high-performance"
         }}
